@@ -57,11 +57,27 @@ def _load_prompt_spec(strategy: str) -> str:
     return (PROMPTS_DIR / filename).read_text(encoding="utf-8")
 
 
-def build_strategy_prompt(strategy: str, context_bundle: list[dict[str, Any]]) -> str:
+def build_strategy_prompt(
+    strategy: str,
+    context_bundle: list[dict[str, Any]],
+    target_count: int = 5,
+) -> str:
     spec = _load_prompt_spec(strategy)
     context_json = json.dumps(context_bundle, indent=2, default=str)
+    instruction = BATCH_INSTRUCTION.replace(
+        "exactly 4 to 5 adversarial test cases",
+        f"exactly {target_count} adversarial test cases"
+    )
+    
+    # Critical override: force LLM to act as the generator rather than writing python specs
+    system_override = (
+        "CRITICAL SYSTEM INSTRUCTION: You are NOT writing Python code or implementing a Python function. "
+        "Do NOT output code blocks like '```python ...'. Your task is to act directly as the audit test generator. "
+        f"Directly generate the exactly {target_count} adversarial test cases as a raw JSON array.\n\n"
+    )
+    
     return (
-        f"{spec}\n\n{BATCH_INSTRUCTION}\n\n"
+        f"{system_override}{spec}\n\n{instruction}\n\n"
         f"context_bundle:\n{context_json}\n\n"
         "Generate the test cases now."
     )

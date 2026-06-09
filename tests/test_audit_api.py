@@ -115,10 +115,14 @@ def test_start_generating_test_cases(
     assert "governance" in body["strategies_generated"]
 
 
+@patch("agent.api.routes.audit.generate_all_strategies")
+@patch("agent.api.routes.audit.replace_audit_sandbox")
 @patch("agent.api.routes.audit.kg_context.customer_instance_count", return_value=0)
 @patch("agent.api.routes.audit.get_audit_sandbox")
 @patch("agent.api.routes.audit._session_store.load_session", return_value=COMPLETE_SESSION)
-def test_start_generating_requires_kg_mapping(mock_load, mock_get, mock_count, client):
+def test_start_generating_requires_kg_mapping(
+    mock_load, mock_get, mock_count, mock_replace, mock_generate, client
+):
     mock_get.return_value = {
         "audit_id": "audit-1",
         "session_id": "sess-complete",
@@ -126,6 +130,8 @@ def test_start_generating_requires_kg_mapping(mock_load, mock_get, mock_count, c
         "system_url": "https://api.example.com/agent",
         "sandbox_test_passed": True,
     }
+    mock_replace.side_effect = lambda _id, doc: doc
+    mock_generate.return_value = GenerationResult(test_cases=[], strategies_generated=[])
     res = client.post("/api/v1/audit/sandbox/audit-1/start-generating-test-cases")
     assert res.status_code == 400
     assert "knowledge graph" in res.json()["detail"].lower()

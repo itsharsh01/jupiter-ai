@@ -95,12 +95,13 @@ def normalize_test_cases(
     strategy: str,
     raw: dict[str, Any] | list[Any],
     context_bundle: list[dict[str, Any]],
+    limit: int = 5,
 ) -> list[dict[str, Any]]:
     source_type, source_name = _lineage_from_context(strategy, context_bundle)
     category = STRATEGY_CATEGORIES.get(strategy, strategy)
     cases: list[dict[str, Any]] = []
 
-    for item in _extract_cases(raw)[:5]:
+    for item in _extract_cases(raw)[:limit]:
         user_prompt = _resolve_user_prompt(item)
         if not user_prompt:
             continue

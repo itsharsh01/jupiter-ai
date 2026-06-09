@@ -268,23 +268,23 @@ def start_generating_test_cases(audit_id: str) -> StartAuditResponse:
         )
 
     instance_count = kg_context.customer_instance_count(customer_id)
-    if instance_count == 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=KG_MAP_MESSAGE.format(customer_id=customer_id),
-        )
 
     now = _utc_now()
     doc["status"] = "generating"
     doc["updated_at"] = now
     replace_audit_sandbox(audit_id, doc)
 
-    gen_result = generate_all_strategies(customer_id)
+    gen_result = generate_all_strategies(customer_id, session=session)
 
     if not gen_result.test_cases:
         doc["status"] = "failed"
         doc["updated_at"] = _utc_now()
         replace_audit_sandbox(audit_id, doc)
+        if instance_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=KG_MAP_MESSAGE.format(customer_id=customer_id),
+            )
         detail = "; ".join(gen_result.warnings) or "No test cases could be generated"
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
 
