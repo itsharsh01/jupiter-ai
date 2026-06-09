@@ -49,6 +49,18 @@ class CompletionCriteria(BaseModel):
     all_critical_gaps_resolved: bool = False
     confidence_met: bool = False
     minimum_confidence: float = 0.80
+    llm_completeness_score: float = 0.0
+    llm_judge_met: bool = False
+
+
+class GapAnalysisSnapshot(BaseModel):
+    analyzed_at_turn: int = 0
+    completeness_score: float = 0.0
+    missing_keys: list[str] = Field(default_factory=list)
+    missing_required: list[str] = Field(default_factory=list)
+    priority_missing: list[str] = Field(default_factory=list)
+    judge_reasoning: str = ""
+    raw: dict[str, Any] = Field(default_factory=dict)
 
 
 class SessionState(BaseModel):
@@ -69,6 +81,7 @@ class SessionState(BaseModel):
     max_history_turns: int = 6
     discovery_complete: bool = False
     completion_criteria: CompletionCriteria = Field(default_factory=CompletionCriteria)
+    gap_analysis: GapAnalysisSnapshot | None = None
     conversation_turns: int = 0
 
 

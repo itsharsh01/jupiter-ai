@@ -44,7 +44,7 @@ class TestCaseReport(BaseModel):
 class TestCaseExecutionResponse(BaseModel):
     status_code: int = 0
     response_preview: str | None = None
-    executed_at: str
+    executed_at: str | None = None
     passed: bool | None = None
     message: str | None = None
     execution_id: str | None = None

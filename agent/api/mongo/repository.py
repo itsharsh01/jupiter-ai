@@ -11,8 +11,21 @@ from agent.auth.tokens import hash_password
 from .client import get_customers_collection
 
 
+def _seed_phoenix_if_missing(record: CustomerRecord) -> CustomerRecord:
+    from agent.api.phoenix_config import default_phoenix_config_from_env
+
+    if record.phoenix_config is not None:
+        return record
+    env_config = default_phoenix_config_from_env()
+    if env_config is None:
+        return record
+    record.phoenix_config = env_config
+    return record
+
+
 def save_customer(record: CustomerRecord) -> CustomerRecord:
     collection = get_customers_collection()
+    record = _seed_phoenix_if_missing(record)
     doc = record.model_dump(mode="json")
     collection.replace_one({"id": record.id}, doc, upsert=True)
     return record

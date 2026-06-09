@@ -10,25 +10,33 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from agent.api.mongo.client import close_mongo, connect_mongo
 from agent.api.mongo.repository import ensure_default_customer
+from agent.api.phoenix_config import seed_all_customers_phoenix_from_env
+from agent.api.routes.meta import router as meta_router
 from agent.api.routes.audit import router as audit_router
 from agent.api.routes.auth import router as auth_router
 from agent.api.routes.customers import router as customers_router
 from agent.api.routes.discovery_v2 import router as discovery_v2_router
 from agent.api.routes.knowledge_graph import router as knowledge_graph_router
-from agent.api.routes.meta import router as meta_router
+from agent.api.routes.phoenix import router as phoenix_router
 from agent.api.storage import ensure_dirs
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    import logging
+
     load_project_env()
     ensure_dirs()
     try:
         connect_mongo()
         ensure_default_customer()
+        seeded = seed_all_customers_phoenix_from_env()
+        if seeded:
+            logging.getLogger(__name__).info(
+                "Seeded Phoenix config from env for %s existing customer(s)",
+                seeded,
+            )
     except Exception as exc:
-        import logging
-
         logging.getLogger(__name__).warning(
             "MongoDB not available at startup (%s). API will start; /health shows status.",
             exc,
@@ -54,6 +62,7 @@ app.add_middleware(
 
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(customers_router, prefix="/api/v1")
+app.include_router(phoenix_router, prefix="/api/v1")
 app.include_router(audit_router, prefix="/api/v1")
 app.include_router(knowledge_graph_router, prefix="/api/v1")
 app.include_router(discovery_v2_router, prefix="/api/v2")

@@ -1,0 +1,33 @@
+# GovernAI Audit Worker — Pub/Sub trace evaluation (separate App Engine service)
+#
+# Deploy after the API service:
+#   gcloud app deploy worker-app.yaml --project=jupiter-ai-498513
+#
+# Uses the same Dockerfile as app.yaml; only the entrypoint differs.
+
+runtime: custom
+env: flex
+service: audit-worker
+
+entrypoint: uv run python -m agent.audit.worker
+
+automatic_scaling:
+  min_num_instances: 1
+  max_num_instances: 3
+  cool_down_period_sec: 120
+  cpu_utilization:
+    target_utilization: 0.5
+
+resources:
+  cpu: 1
+  memory_gb: 2
+  disk_size_gb: 10
+
+env_variables:
+  MONGO_DB_NAME: "govern-ai-agent"
+  DISCOVERY_LLM_MODEL: "meta-llama/llama-4-scout-17b-16e-instruct"
+  DISCOVERY_LLM_FALLBACK_MODELS: "llama-3.3-70b-versatile"
+  GCP_PROJECT_ID: "jupiter-ai-498513"
+  GCP_TOPIC_ID: "jupiter-topic-4021"
+  GCP_SUBSCRIPTION_ID: "jupiter-topic-4021-sub"
+  PHOENIX_PROJECT_NAME: "gemini-hackathon"

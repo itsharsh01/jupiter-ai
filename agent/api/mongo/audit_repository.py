@@ -54,26 +54,17 @@ def update_test_case_execution(
     status: str | None = None,
     execution_patch: dict[str, Any],
 ) -> dict[str, Any] | None:
-    """Read-modify-write a single test case execution nested in the audit doc."""
-    doc = get_audit_sandbox(audit_id)
-    if doc is None:
-        return None
-
-    cases = doc.get("test_cases") or []
-    case_index = next(
-        (i for i, tc in enumerate(cases) if tc.get("test_case_id") == test_case_id),
-        None,
-    )
-    if case_index is None:
-        return None
-
-    case = dict(cases[case_index])
-    execution = dict(case.get("execution") or {})
-    execution.update(execution_patch)
-    case["execution"] = execution
+    """Patch nested execution fields without clobbering unrelated keys (atomic $set)."""
+    set_fields: dict[str, Any] = {"updated_at": _utc_now()}
+    for key, value in execution_patch.items():
+        set_fields[f"test_cases.$.execution.{key}"] = value
     if status is not None:
-        case["status"] = status
-    cases[case_index] = case
-    doc["test_cases"] = cases
-    doc["updated_at"] = _utc_now()
-    return replace_audit_sandbox(audit_id, doc)
+        set_fields["test_cases.$.status"] = status
+
+    result = _collection().update_one(
+        {"audit_id": audit_id, "test_cases.test_case_id": test_case_id},
+        {"$set": set_fields},
+    )
+    if result.matched_count == 0:
+        return None
+    return get_audit_sandbox(audit_id)

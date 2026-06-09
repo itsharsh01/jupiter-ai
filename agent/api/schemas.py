@@ -113,6 +113,36 @@ class PolicyFileRecord(BaseModel):
     uploaded_at: datetime
 
 
+class PhoenixConfigRecord(BaseModel):
+    api_key: str = Field(..., min_length=1)
+    collector_endpoint: str = Field(..., min_length=1)
+    project_name: str = Field(default="governai", min_length=1)
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class PhoenixConfigUpdate(BaseModel):
+    api_key: str = Field(..., min_length=1)
+    collector_endpoint: str = Field(..., min_length=1)
+    project_name: str = Field(default="governai", min_length=1)
+
+
+class PhoenixConfigResponse(BaseModel):
+    customer_id: str
+    collector_endpoint: str
+    project_name: str
+    api_key_set: bool
+    updated_at: datetime
+
+
+class PhoenixConfigCredentialsResponse(BaseModel):
+    """Full credentials for GovernAI SDK / agent runtimes."""
+    customer_id: str
+    api_key: str
+    collector_endpoint: str
+    project_name: str
+    updated_at: datetime
+
+
 class SystemInformationRecord(SystemInformationUpdate):
     updated_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)
@@ -131,6 +161,10 @@ class CustomerRecord(BaseModel):
     discovery_session_id: str | None = Field(
         default=None,
         description="Single discovery session id for this customer",
+    )
+    phoenix_config: PhoenixConfigRecord | None = Field(
+        default=None,
+        description="Per-customer Phoenix/Arize tracing credentials",
     )
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     system_information: SystemInformationRecord | None = None

@@ -14,6 +14,7 @@ from agent.discovery_v2.state_ops import (
     build_ui_hint,
     patches_from_structured_answers,
 )
+from agent.discovery_v2.gap_analysis import apply_gap_analysis_to_state
 from agent.discovery_v2.tools.check_confidence import check_confidence_tool
 from agent.discovery_v2.tools.generate_question import generate_question_tool, stream_generate_question
 from agent.discovery_v2.tools.parse_answer import parse_answer_tool
@@ -136,6 +137,19 @@ def iter_turn_events(
     keys_filled = apply_patches(state, parse_result.patches)
     yield _event("progress", _progress_payload(state))
 
+    yield _event("status", {"phase": "analyzing", "message": "Reviewing what we still need..."})
+    gap = apply_gap_analysis_to_state(state)
+    yield _event(
+        "gap_analysis",
+        {
+            "completeness_score": gap.completeness_score,
+            "missing_count": len(gap.missing_keys),
+            "missing_required_count": len(gap.missing_required),
+            "priority_missing": gap.priority_missing[:3],
+        },
+    )
+    yield _event("progress", _progress_payload(state))
+
     if (
         parse_result.needs_cross_question
         and state.cross_question_count < state.max_cross_questions
@@ -143,6 +157,12 @@ def iter_turn_events(
     ):
         state.cross_question_count += 1
         target = state.queue[0]
+        from agent.discovery_v2.gap_analysis import gap_focus_item
+
+        focus = gap_focus_item(state)
+        if focus is not None:
+            target = focus
+            state.current_key = focus.key
         yield _event("status", {"phase": "generating", "message": "Preparing a follow-up question..."})
         question = ""
         for ev in _stream_question_events(target, state, is_cross_question=True):

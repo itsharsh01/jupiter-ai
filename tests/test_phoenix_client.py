@@ -2,21 +2,32 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from agent.audit.phoenix_client import fetch_latest_trace, fetch_trace_payload, phoenix_api_base
+from agent.audit.phoenix_client import fetch_latest_trace, fetch_trace_payload, phoenix_configured
 
 
-def test_phoenix_api_base_strips_traces_suffix():
-    with patch.dict(
-        "os.environ",
-        {"PHOENIX_COLLECTOR_ENDPOINT": "https://app.phoenix.arize.com/s/space/v1/traces"},
-        clear=False,
-    ):
-        assert phoenix_api_base() == "https://app.phoenix.arize.com/s/space"
+@patch("agent.audit.phoenix_client.get_customer_phoenix_settings")
+def test_phoenix_configured_uses_customer_id(mock_get):
+    from agent.api.phoenix_config import PhoenixSettings
+
+    mock_get.return_value = PhoenixSettings(
+        api_key="key",
+        collector_endpoint="https://app.phoenix.arize.com/s/space",
+        project_name="demo",
+    )
+    assert phoenix_configured("cust-1") is True
+    mock_get.assert_called_once_with("cust-1")
 
 
-@patch("agent.audit.phoenix_client.phoenix_configured", return_value=True)
+@patch("agent.audit.phoenix_client.get_customer_phoenix_settings", return_value=None)
 @patch("agent.audit.phoenix_client._list_recent_spans")
-def test_fetch_latest_trace_picks_newest_and_skips_linked(mock_list, _mock_configured):
+def test_fetch_latest_trace_picks_newest_and_skips_linked(mock_list, _mock_settings):
+    from agent.api.phoenix_config import PhoenixSettings
+
+    settings = PhoenixSettings(
+        api_key="key",
+        collector_endpoint="https://app.phoenix.arize.com/s/space",
+        project_name="demo",
+    )
     mock_list.return_value = [
         {
             "id": "old",
@@ -32,20 +43,32 @@ def test_fetch_latest_trace_picks_newest_and_skips_linked(mock_list, _mock_confi
         },
     ]
 
-    link = fetch_latest_trace(
-        exclude_trace_ids={"trace-old"},
-        max_attempts=1,
-        pause_seconds=0,
-    )
+    with patch(
+        "agent.audit.phoenix_client._require_settings",
+        return_value=settings,
+    ):
+        link = fetch_latest_trace(
+            customer_id="cust-1",
+            exclude_trace_ids={"trace-old"},
+            max_attempts=1,
+            pause_seconds=0,
+        )
 
     assert link is not None
     assert link["phoenix_trace_id"] == "trace-new"
     assert link["phoenix_span_global_id"] == "new"
 
 
-@patch("agent.audit.phoenix_client.phoenix_configured", return_value=True)
+@patch("agent.audit.phoenix_client.get_customer_phoenix_settings", return_value=None)
 @patch("agent.audit.phoenix_client._list_spans_by_trace_id")
-def test_fetch_trace_payload_parses_governai_trace(mock_list, _mock_configured):
+def test_fetch_trace_payload_parses_governai_trace(mock_list, _mock_settings):
+    from agent.api.phoenix_config import PhoenixSettings
+
+    settings = PhoenixSettings(
+        api_key="key",
+        collector_endpoint="https://app.phoenix.arize.com/s/space",
+        project_name="demo",
+    )
     mock_list.return_value = [
         {
             "name": "governai.process",
@@ -55,7 +78,11 @@ def test_fetch_trace_payload_parses_governai_trace(mock_list, _mock_configured):
         }
     ]
 
-    payload = fetch_trace_payload("trace-abc")
+    with patch(
+        "agent.audit.phoenix_client._require_settings",
+        return_value=settings,
+    ):
+        payload = fetch_trace_payload("trace-abc", customer_id="cust-1")
 
     assert payload is not None
     assert payload["trace_id"] == "t1"

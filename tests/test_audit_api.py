@@ -215,3 +215,28 @@ def test_execute_test_case(mock_get, mock_probe, mock_replace, mock_publish, cli
     publish_job = mock_publish.call_args.args[0]
     assert publish_job["audit_id"] == "audit-1"
     assert publish_job["test_case_id"] == "tc-1"
+
+
+@patch("agent.api.routes.audit.get_latest_audit_for_session")
+def test_get_audit_sandbox_with_partial_execution(mock_latest, client):
+    mock_latest.return_value = {
+        "audit_id": "audit-1",
+        "session_id": "sess-complete",
+        "system_url": "https://api.example.com/agent",
+        "status": "ready",
+        "test_cases": [
+            {
+                **SAMPLE_CASE,
+                "status": "evaluating",
+                "execution": {"evaluation_status": "tracing"},
+            }
+        ],
+        "created_at": "2026-06-01T00:00:00+00:00",
+        "updated_at": "2026-06-01T00:00:00+00:00",
+    }
+
+    res = client.get("/api/v1/audit/sandbox/session/sess-complete")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["test_cases"][0]["execution"]["evaluation_status"] == "tracing"
+    assert body["test_cases"][0]["execution"]["executed_at"] is None

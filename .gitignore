@@ -11,6 +11,8 @@ wheels/
 
 # Secrets
 .env
+.env.production.yaml
+.app.deploy.yaml
 
 # Generated graph export for HTML viewer
 agent/knowledge_graph/graph_data.json

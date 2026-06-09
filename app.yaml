@@ -1,0 +1,51 @@
+# GovernAI Agent API — Google App Engine (standard environment)
+#
+# One-time IAM setup (new projects only — fixes opaque [13] deploy errors):
+#   gcloud storage buckets add-iam-policy-binding gs://staging.PROJECT_ID.appspot.com \
+#     --member=serviceAccount:PROJECT_ID@appspot.gserviceaccount.com --role=roles/storage.admin
+#   gcloud projects add-iam-policy-binding PROJECT_ID \
+#     --member=serviceAccount:NUM@cloudbuild.gserviceaccount.com --role=roles/artifactregistry.writer
+#
+# Regenerate requirements.txt before deploy:
+#   uv export --no-dev --no-editable --no-emit-project -o requirements.txt
+#
+# Deploy from govern-ai-agent/:
+#   .\scripts\deploy.ps1
+#   # or manually:
+#   python scripts/merge_deploy_yaml.py app.yaml .env.production.yaml .app.deploy.yaml
+#   gcloud app deploy .app.deploy.yaml --project=jupiter-ai-498513
+#
+# Required secret env vars (see .env.example):
+#   NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, NEO4J_DATABASE
+#   QDRANT_URL, QDRANT_API_KEY
+#   MONGO_DB_HOST, MONGO_DB_USER, MONGO_DB_PASSWORD
+#   GROQ_API_KEY
+#   GOVERN_AUTH_SECRET, GOVERN_AUTH_DEMO_EMAIL, GOVERN_AUTH_DEMO_PASSWORD
+#   PHOENIX_API_KEY, PHOENIX_COLLECTOR_ENDPOINT
+#
+# Pub/Sub audit worker: deploy worker-app.yaml (Cloud Run) separately.
+
+runtime: python312
+service: default
+
+entrypoint: uvicorn agent.api.main:app --host 0.0.0.0 --port $PORT
+
+instance_class: F4_1G
+
+automatic_scaling:
+  min_instances: 0
+  max_instances: 10
+  target_cpu_utilization: 0.65
+
+env_variables:
+  API_HOST: "0.0.0.0"
+  MONGO_DB_NAME: "govern-ai-agent"
+  QDRANT_COLLECTION: "governai_ontology"
+  EMBEDDING_MODEL: "all-MiniLM-L6-v2"
+  DISCOVERY_LLM_MODEL: "meta-llama/llama-4-scout-17b-16e-instruct"
+  DISCOVERY_LLM_FALLBACK_MODELS: "llama-3.3-70b-versatile"
+  GCP_PROJECT_ID: "jupiter-ai-498513"
+  GCP_TOPIC_ID: "jupiter-topic-4021"
+  GCP_SUBSCRIPTION_ID: "jupiter-topic-4021-sub"
+  PHOENIX_PROJECT_NAME: "gemini-hackathon"
+  GOVERN_AUTH_ALLOW_REGISTER: "false"

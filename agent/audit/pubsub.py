@@ -46,6 +46,7 @@ def _subscription_path(config: PubSubConfig) -> str:
 def build_trace_evaluation_job(
     *,
     audit_id: str,
+    customer_id: str,
     test_case_id: str,
     execution_id: str,
     started_at: str,
@@ -61,6 +62,7 @@ def build_trace_evaluation_job(
     return {
         "event_type": EVENT_TYPE,
         "audit_id": audit_id,
+        "customer_id": customer_id,
         "test_case_id": test_case_id,
         "execution_id": execution_id,
         "started_at": started_at,

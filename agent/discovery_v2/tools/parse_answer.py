@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from agent.discovery_v2.config import VAGUE_ANSWER_MIN_CHARS
+from agent.discovery_v2.copy import VAGUE_ANSWER_NUDGE
 from agent.discovery_v2.llm import discovery_llm_available, generate_json
 from agent.discovery_v2.models import FactPatch, ParseAnswerResult, SessionState
 from agent.discovery_v2.priority_queue import queue_item_by_key
@@ -16,6 +18,38 @@ _PII_KW = ("pii", "personal data", "customer data", "ssn", "national id")
 
 POLICY_MIN_DETAIL_CHARS = 120
 TOOL_REGISTRY_KEY = "tooling.tools"
+
+_VAGUE_PHRASES = frozenset(
+    {
+        "yes",
+        "no",
+        "maybe",
+        "not sure",
+        "i think so",
+        "standard",
+        "normal",
+        "typical",
+        "n/a",
+        "none",
+        "nothing",
+        "same as before",
+        "as usual",
+    }
+)
+
+
+def _is_vague_answer(text: str, item) -> bool:
+    stripped = text.strip()
+    lower = stripped.lower().rstrip(".")
+    if not stripped:
+        return True
+    if lower in _VAGUE_PHRASES:
+        return True
+    if item and item.answer_type == "boolean":
+        return False
+    if item and item.answer_type in ("enum", "multi_enum", "tool_registry", "document_upload"):
+        return len(stripped) < 8
+    return len(stripped) < VAGUE_ANSWER_MIN_CHARS
 
 
 def _parse_yes_no(text: str) -> bool | None:
@@ -236,11 +270,15 @@ def parse_answer_tool(
 
     needs_cross = policy_cross
     reason = policy_reason
+    item = queue_item_by_key(state.queue, current_key) if current_key else None
+    if item and _is_vague_answer(user_answer, item):
+        needs_cross = True
+        reason = reason or VAGUE_ANSWER_NUDGE
     if current_key and current_key in state.discovered:
         entry = state.discovered[current_key]
-        if entry.confidence < 0.75 and len(user_answer.strip()) < 15:
+        if entry.confidence < 0.75 and len(user_answer.strip()) < VAGUE_ANSWER_MIN_CHARS:
             needs_cross = True
-            reason = reason or "Answer was too brief for this field."
+            reason = reason or VAGUE_ANSWER_NUDGE
 
     for p in patches:
         if p.confidence < 0.75:

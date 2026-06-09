@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-import json
 import logging
-import os
-import time
-from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import quote
 
 import httpx
+
+from agent.api.phoenix_config import PhoenixSettings, get_customer_phoenix_settings
 
 logger = logging.getLogger(__name__)
 
@@ -17,36 +14,39 @@ DEFAULT_PAUSE_SECONDS = 1.0
 SPAN_NAME = "governai.process"
 
 
-def phoenix_api_base() -> str | None:
-    endpoint = (
-        os.getenv("PHOENIX_COLLECTOR_ENDPOINT")
-        or os.getenv("PHOENIX_BASE_URL")
-        or os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-        or ""
-    ).strip().rstrip("/")
-    if not endpoint:
+def phoenix_api_base(settings: PhoenixSettings | None = None) -> str | None:
+    if settings is None:
         return None
-    if endpoint.endswith("/v1/traces"):
-        return endpoint[: -len("/v1/traces")]
-    return endpoint
+    return settings.api_base()
 
 
-def phoenix_configured() -> bool:
-    return bool(os.getenv("PHOENIX_API_KEY", "").strip() and phoenix_api_base())
+def phoenix_configured(customer_id: str | None = None) -> bool:
+    if not customer_id:
+        return False
+    settings = get_customer_phoenix_settings(customer_id)
+    return settings is not None and settings.configured()
 
 
-def _project_name() -> str:
-    return os.getenv("PHOENIX_PROJECT_NAME", "governai").strip() or "governai"
+def _require_settings(customer_id: str | None) -> PhoenixSettings | None:
+    if not customer_id:
+        return None
+    return get_customer_phoenix_settings(customer_id)
 
 
-def _list_recent_spans(*, since: str | None = None, limit: int = 10) -> list[dict[str, Any]]:
-    api_key = os.getenv("PHOENIX_API_KEY", "").strip()
-    base = phoenix_api_base()
-    if not api_key or not base:
+def _list_recent_spans(
+    settings: PhoenixSettings,
+    *,
+    since: str | None = None,
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    from urllib.parse import quote
+
+    base = settings.api_base()
+    if not base:
         return []
 
-    url = f"{base}/v1/projects/{quote(_project_name(), safe='')}/spans"
-    headers = {"Authorization": f"Bearer {api_key}"}
+    url = f"{base}/v1/projects/{quote(settings.project_name, safe='')}/spans"
+    headers = {"Authorization": f"Bearer {settings.api_key}"}
     params: list[tuple[str, str | int]] = [
         ("limit", limit),
         ("name", SPAN_NAME),
@@ -111,17 +111,21 @@ def _pick_latest_span(
 
 def fetch_trace_by_context(
     *,
+    customer_id: str | None,
     since: str | None = None,
     exclude_trace_ids: set[str] | None = None,
     max_attempts: int = DEFAULT_ATTEMPTS,
     pause_seconds: float = DEFAULT_PAUSE_SECONDS,
 ) -> dict[str, Any] | None:
     """Return the newest governai.process span from Phoenix (OTLP ingest may lag)."""
-    if not phoenix_configured():
+    import time
+
+    settings = _require_settings(customer_id)
+    if settings is None:
         return None
 
     for attempt in range(max_attempts):
-        spans = _list_recent_spans(since=since, limit=10)
+        spans = _list_recent_spans(settings, since=since, limit=10)
         latest = _pick_latest_span(spans, exclude_trace_ids=exclude_trace_ids)
         if latest is not None:
             return _span_to_link(latest)
@@ -134,6 +138,7 @@ def fetch_trace_by_context(
 
 def fetch_latest_trace(
     *,
+    customer_id: str | None,
     since: str | None = None,
     exclude_trace_ids: set[str] | None = None,
     max_attempts: int = DEFAULT_ATTEMPTS,
@@ -141,6 +146,7 @@ def fetch_latest_trace(
 ) -> dict[str, Any] | None:
     """Backward-compatible alias for fetch_trace_by_context."""
     return fetch_trace_by_context(
+        customer_id=customer_id,
         since=since,
         exclude_trace_ids=exclude_trace_ids,
         max_attempts=max_attempts,
@@ -148,14 +154,20 @@ def fetch_latest_trace(
     )
 
 
-def _list_spans_by_trace_id(trace_id: str, *, limit: int = 20) -> list[dict[str, Any]]:
-    api_key = os.getenv("PHOENIX_API_KEY", "").strip()
-    base = phoenix_api_base()
-    if not api_key or not base:
+def _list_spans_by_trace_id(
+    settings: PhoenixSettings,
+    trace_id: str,
+    *,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    from urllib.parse import quote
+
+    base = settings.api_base()
+    if not base:
         return []
 
-    url = f"{base}/v1/projects/{quote(_project_name(), safe='')}/spans"
-    headers = {"Authorization": f"Bearer {api_key}"}
+    url = f"{base}/v1/projects/{quote(settings.project_name, safe='')}/spans"
+    headers = {"Authorization": f"Bearer {settings.api_key}"}
     params: list[tuple[str, str | int]] = [
         ("limit", limit),
         ("trace_id", trace_id),
@@ -182,6 +194,8 @@ def _list_spans_by_trace_id(trace_id: str, *, limit: int = 20) -> list[dict[str,
 
 
 def _extract_trace_payload(span: dict[str, Any]) -> dict[str, Any] | None:
+    import json
+
     attributes = span.get("attributes") or {}
     raw = attributes.get("governai.trace")
     if not raw:
@@ -198,12 +212,13 @@ def _extract_trace_payload(span: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-def fetch_trace_payload(trace_id: str) -> dict[str, Any] | None:
+def fetch_trace_payload(trace_id: str, *, customer_id: str | None) -> dict[str, Any] | None:
     """Fetch parsed governai.trace payload for a Phoenix trace_id."""
-    if not phoenix_configured() or not trace_id:
+    settings = _require_settings(customer_id)
+    if settings is None or not trace_id:
         return None
 
-    spans = _list_spans_by_trace_id(trace_id)
+    spans = _list_spans_by_trace_id(settings, trace_id)
     process_spans = [span for span in spans if span.get("name") == SPAN_NAME]
     candidates = process_spans or spans
     if not candidates:
@@ -218,4 +233,6 @@ def fetch_trace_payload(trace_id: str) -> dict[str, Any] | None:
 
 
 def execution_started_at() -> str:
+    from datetime import datetime, timezone
+
     return datetime.now(timezone.utc).isoformat()

@@ -3,7 +3,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from agent.discovery_v2.config import CONFIDENCE_POP_THRESHOLD, MIN_AVG_CONFIDENCE_COMPLETE
+from agent.discovery_v2.config import (
+    CONFIDENCE_POP_THRESHOLD,
+    DISCOVERY_JUDGE_THRESHOLD,
+    MIN_AVG_CONFIDENCE_COMPLETE,
+)
 from agent.discovery_v2.models import (
     CheckConfidenceResult,
     DiscoveredEntry,
@@ -116,7 +120,10 @@ def apply_patches(state: SessionState, patches: list[FactPatch]) -> list[str]:
 def peek_queue(state: SessionState, previous_section: str | None = None) -> PeekQueueResult:
     if not state.queue:
         return PeekQueueResult(next_item=None, remaining_count=0, section_changed=False)
-    next_item = state.queue[0]
+
+    from agent.discovery_v2.gap_analysis import gap_focus_item
+
+    next_item = gap_focus_item(state) or state.queue[0]
     section_changed = bool(previous_section and previous_section != next_item.section)
     return PeekQueueResult(
         next_item=next_item,
@@ -141,15 +148,27 @@ def check_confidence(state: SessionState) -> CheckConfidenceResult:
     state.completion_criteria.all_required_filled = len(required_remaining) == 0
     state.completion_criteria.all_critical_gaps_resolved = len(critical_remaining) == 0
 
-    complete = (
-        state.completion_criteria.all_required_filled
-        and state.completion_criteria.all_critical_gaps_resolved
+    gap = state.gap_analysis
+    llm_judge_complete = bool(
+        gap
+        and gap.completeness_score >= DISCOVERY_JUDGE_THRESHOLD
+        and len(gap.missing_required) == 0
         and state.completion_criteria.confidence_met
-        and len(state.queue) == 0
-    ) or (
+        and len(state.discovered) > 0
+    )
+    if gap:
+        state.completion_criteria.llm_completeness_score = gap.completeness_score
+        state.completion_criteria.llm_judge_met = llm_judge_complete
+
+    queue_empty = len(state.queue) == 0
+    rule_complete = (
         state.completion_criteria.all_required_filled
         and state.completion_criteria.confidence_met
-        and len(state.queue) == 0
+        and queue_empty
+    )
+
+    complete = llm_judge_complete or (
+        rule_complete and state.completion_criteria.all_critical_gaps_resolved
     )
 
     state.discovery_complete = complete

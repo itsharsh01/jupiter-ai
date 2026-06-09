@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from agent.api.mongo.repository import (
@@ -12,12 +13,33 @@ from agent.api.mongo.repository import (
 )
 from agent.api.schemas import CustomerRecord
 
-DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
-UPLOADS_DIR = DATA_DIR / "uploads"
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+DATA_DIR = _PROJECT_ROOT / "data"
+
+
+def _uploads_base() -> Path:
+    override = os.getenv("GOVERN_UPLOADS_DIR", "").strip()
+    if override:
+        return Path(override)
+    # App Engine Standard: app code under /workspace is read-only; only /tmp is writable.
+    if os.getenv("GAE_ENV") == "standard":
+        return Path("/tmp/governai/uploads")
+    return DATA_DIR / "uploads"
+
+
+UPLOADS_DIR = _uploads_base()
 
 
 def ensure_dirs() -> None:
-    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    global UPLOADS_DIR
+    for candidate in (_uploads_base(), Path("/tmp/governai/uploads")):
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+            UPLOADS_DIR = candidate
+            return
+        except OSError:
+            continue
+    raise OSError("No writable uploads directory found")
 
 
 def customer_uploads_dir(customer_id: str) -> Path:

@@ -57,6 +57,7 @@ def process_trace_evaluation_job(job: dict[str, Any]) -> None:
 
     exclude = {str(tid) for tid in (job.get("exclude_trace_ids") or []) if tid}
     phoenix_link = fetch_trace_by_context(
+        customer_id=str(job.get("customer_id") or "") or None,
         since=job.get("started_at"),
         exclude_trace_ids=exclude,
     )
@@ -68,7 +69,11 @@ def process_trace_evaluation_job(job: dict[str, Any]) -> None:
         return
 
     trace_id = phoenix_link.get("phoenix_trace_id")
-    trace_payload = fetch_trace_payload(trace_id) if trace_id else None
+    trace_payload = (
+        fetch_trace_payload(trace_id, customer_id=str(job.get("customer_id") or "") or None)
+        if trace_id
+        else None
+    )
     trace_linked_at = _utc_now()
 
     update_test_case_execution(

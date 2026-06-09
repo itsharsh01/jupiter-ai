@@ -297,8 +297,13 @@ def start_generating_test_cases(audit_id: str) -> StartAuditResponse:
         f"Generated {len(gen_result.test_cases)} test cases "
         f"across {len(gen_result.strategies_generated)} strategies."
     )
+    if gen_result.strategy_confidence:
+        scores = ", ".join(
+            f"{name}={score:.2f}" for name, score in gen_result.strategy_confidence.items()
+        )
+        message += f" Confidence: {scores}."
     if gen_result.warnings:
-        message += f" Skipped: {', '.join(gen_result.strategies_skipped)}."
+        message += f" Notes: {'; '.join(gen_result.warnings)}."
 
     return StartAuditResponse(
         audit_id=audit_id,
@@ -383,6 +388,7 @@ def execute_test_case(audit_id: str, test_case_id: str) -> ExecuteTestCaseRespon
         }
         job = build_trace_evaluation_job(
             audit_id=audit_id,
+            customer_id=str(doc.get("customer_id") or ""),
             test_case_id=test_case_id,
             execution_id=execution_id,
             started_at=started_at,
@@ -395,13 +401,6 @@ def execute_test_case(audit_id: str, test_case_id: str) -> ExecuteTestCaseRespon
             title=case.get("title", ""),
             severity=case.get("severity", "MEDIUM"),
         )
-        try:
-            publish_trace_evaluation_job(job)
-        except Exception as exc:
-            final_status = "error"
-            execution["evaluation_status"] = "error"
-            execution["message"] = f"Failed to queue trace evaluation: {exc}"
-            execution["evaluated_at"] = _utc_now()
     else:
         final_status = "error"
         execution = {
@@ -414,6 +413,7 @@ def execute_test_case(audit_id: str, test_case_id: str) -> ExecuteTestCaseRespon
             "evaluation_status": "error",
             "evaluated_at": _utc_now(),
         }
+        job = None
 
     case["status"] = final_status
     case["execution"] = execution
@@ -421,6 +421,21 @@ def execute_test_case(audit_id: str, test_case_id: str) -> ExecuteTestCaseRespon
     doc["test_cases"] = cases
     doc["updated_at"] = _utc_now()
     replace_audit_sandbox(audit_id, doc)
+
+    if job is not None:
+        try:
+            publish_trace_evaluation_job(job)
+        except Exception as exc:
+            final_status = "error"
+            execution["evaluation_status"] = "error"
+            execution["message"] = f"Failed to queue trace evaluation: {exc}"
+            execution["evaluated_at"] = _utc_now()
+            case["status"] = final_status
+            case["execution"] = execution
+            cases[case_index] = case
+            doc["test_cases"] = cases
+            doc["updated_at"] = _utc_now()
+            replace_audit_sandbox(audit_id, doc)
 
     return ExecuteTestCaseResponse(
         audit_id=audit_id,

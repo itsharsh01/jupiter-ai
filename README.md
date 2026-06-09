@@ -140,6 +140,75 @@ Policy PDFs are stored locally under `data/uploads/{customer_id}/policies/`. Cus
 
 ---
 
+## Deployment (Google App Engine)
+
+**Project:** `jupiter-ai-498513`  
+**API URL:** https://jupiter-ai-498513.uc.r.appspot.com
+
+### Prerequisites
+
+- [Google Cloud SDK](https://cloud.google.com/sdk/docs/install) (`gcloud`) authenticated to the project
+- Dependencies exported to `requirements.txt` before each deploy:
+
+```powershell
+uv export --no-dev --no-editable --no-emit-project -o requirements.txt
+```
+
+### One-time setup
+
+1. **IAM** (new GCP projects only — fixes opaque deploy errors):
+
+```powershell
+.\scripts\setup_gae_iam.ps1 -ProjectId jupiter-ai-498513
+```
+
+2. **Production secrets** — create `.env.production.yaml` (gitignored) from `.env`:
+
+```yaml
+env_variables:
+  NEO4J_URI: "..."
+  NEO4J_USER: "..."
+  NEO4J_PASSWORD: "..."
+  NEO4J_DATABASE: "..."
+  QDRANT_URL: "..."
+  QDRANT_API_KEY: "..."
+  MONGO_DB_HOST: "..."
+  MONGO_DB_USER: "..."
+  MONGO_DB_PASSWORD: "..."
+  GROQ_API_KEY: "..."
+  PHOENIX_API_KEY: "..."
+  PHOENIX_COLLECTOR_ENDPOINT: "..."
+  GOVERN_AUTH_SECRET: "..."
+  GOVERN_AUTH_DEMO_EMAIL: "root@gov.os"
+  GOVERN_AUTH_DEMO_PASSWORD: "governai-dev"
+```
+
+See [`.env.example`](.env.example) for all keys.
+
+### Deploy API
+
+```powershell
+.\scripts\deploy.ps1
+```
+
+Or manually:
+
+```powershell
+python scripts/merge_deploy_yaml.py app.yaml .env.production.yaml .app.deploy.yaml
+gcloud app deploy .app.deploy.yaml --project=jupiter-ai-498513
+Remove-Item .app.deploy.yaml
+```
+
+### Verify
+
+```powershell
+curl https://jupiter-ai-498513.uc.r.appspot.com/health
+```
+
+The Pub/Sub audit worker deploys separately via `worker-app.yaml` (Cloud Run).
+
+---
+
 ## Project layout
 
 ```

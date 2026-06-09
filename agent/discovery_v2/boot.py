@@ -5,6 +5,7 @@ from typing import Any
 
 from agent.discovery_v2.copy import DISCOVERY_GREETING, LLM_UNAVAILABLE_NOTICE
 from agent.discovery_v2.llm import discovery_llm_available, llm_in_cooldown, llm_was_degraded
+from agent.discovery_v2.gap_analysis import apply_gap_analysis_to_state
 from agent.discovery_v2.models import TurnResponse
 from agent.discovery_v2.session_store import SessionStore
 from agent.discovery_v2.state_ops import build_ui_hint
@@ -99,6 +100,11 @@ def iter_boot_events(customer_id: str | None = None) -> Iterator[dict[str, Any]]
         raise RuntimeError("Priority queue is empty")
 
     target = state.queue[0]
+    state.current_key = target.key
+    apply_gap_analysis_to_state(state)
+    from agent.discovery_v2.gap_analysis import gap_focus_item
+
+    target = gap_focus_item(state) or state.queue[0]
     state.current_key = target.key
 
     yield _event("greeting", {"content": DISCOVERY_GREETING})
