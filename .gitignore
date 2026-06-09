@@ -19,3 +19,6 @@ agent/knowledge_graph/graph_data.json
 
 # API local uploads (PDFs)
 data/uploads/
+
+# Deployment guide (local/private)
+DEPLOYMENT.md
